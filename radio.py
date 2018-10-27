@@ -4,6 +4,9 @@
 #
 # radio.py uses an Si4703 to tune to an FM radio station
 #
+# run using:
+#    $ python3 radio.py
+#
 # radio.py was tested on a Raspberry Pi 3 model B+ running
 # raspbian stretch
 #
@@ -18,9 +21,8 @@
 #
 # stretch comes with smbus, wiringPi and i2cdetect installed by default
 #
-##### ????? IS THIS CHANGE REQUIRED???
-# sufo nano /etc/modules
-# i2c-bcm2709
+#
+# sudo nano /etc/modules
 # i2c-dev
 #
 # and then reboot
@@ -38,7 +40,7 @@
 #    2   Ground     9   Ground
 #    3   SDA/SDIO   3   I2C SDA (GPIO2)
 #    4   SCLK       5   I2C SCL (GPIO3)
-#    6   RST        16  GPIO23
+#    6   RST        36  GPIO16
 #
 # Note: there are multiple Si4703 boards and pin outs differ
 #
@@ -65,7 +67,7 @@ import subprocess
 #########################
 # Global Constants
 #   BCM pin numbers
-RST = 23
+RST = 16
 SDA = 2
 
 #   Register Descriptions
@@ -98,7 +100,7 @@ DefaultStation = 947
 #########################
 # Global Variabless
 
-fileLog = open('/home/pi/radio/radio.log', 'w+', 0)
+fileLog = open('/home/pi/radio/radio.log', 'w+')
 
 #   what is this used for ???
 z = "000000000000000"
@@ -175,6 +177,8 @@ def getchannel():
     return channel
 
 def changechannel(newchannel):
+    print("changechannel")
+    print("newchannel = " + str(newchannel))
     c = str(float(newchannel) / 10.0)
     if newchannel < 878 or newchannel > 1080:
         print("  invalid channel " + c)
@@ -182,7 +186,9 @@ def changechannel(newchannel):
     global reg
     newchannel *= 10
     newchannel -= 8750
-    newchannel /= 20
+    newchannel = int (newchannel / 20)
+    print("newchannel - I think above needs to be an int")
+    print(newchannel)
     read_registers()
     reg[CHANNEL] &= 0xFE00;     # Clear out the channel bits
     reg[CHANNEL] |= newchannel; # Mask in the new channel
@@ -261,6 +267,7 @@ def init():
     return
 
 def seek(direction):
+    print("in seek")
     read_registers()
     reg[POWERCFG] |= (1<<10 )
     if direction == 0:
@@ -274,7 +281,8 @@ def seek(direction):
         read_registers()
         if ((reg[STATUSRSSI] & (1<<14)) != 0):
             break
-    print "Trying Station ", float(float(getchannel())/float(10))
+    print("Trying Station ")
+    print(str(float(float(getchannel())/float(10))))
     read_registers()
     valuesfbl = reg[STATUSRSSI] & (1<<13)
     reg[POWERCFG] &= ~(1<<8)
@@ -282,7 +290,7 @@ def seek(direction):
     return
 
 def printMenu():
-    print "\nCurrent FM station = ", float(float(getchannel())/float(10))
+    print ("\nCurrent FM station = ", str(float(float(getchannel())/float(10))))
     print ("  =    Set FM station (=101.1)")
     print ("  0-4  Favorite FM station buttons")
     print ("  d    Seek station down")
@@ -304,10 +312,13 @@ try:
     # 0 = /dev/i2c-0 (port I2C0), 1 = /dev/i2c-1 (port I2C1)
     i2c = smbus.SMBus(1)
 
+    print("init")
     init()
 
+    print("changechannel")
     changechannel(DefaultStation)
 
+    print("setvolume")
     volume = 7
     setVolume(volume)
 
@@ -315,7 +326,8 @@ try:
     while ans:
         printMenu()
 
-        ans = raw_input(">")
+        # python2 uses raw_input
+        ans = input(">")
         if ans >= "0" and ans <= "4":
             i = int(ans)
             j = (FavoriteStations[i:i+1] or [DefaultStation])[0]
@@ -338,8 +350,7 @@ try:
             read_registers()
             print ("\nRadio Status:")
             if reg[STATUSRSSI] & (1<<15):
-                print "  RDS Available -",
-                blockerr = reg[STATUSRSSI] & 0x0600 >> 9
+                print("  RDS Available -", str(blockerr = reg[STATUSRSSI] & 0x0600 >> 9))
                 if blockerr == 0:
                     print ("  No RDS Errors")
                 if blockerr == 1:
@@ -351,9 +362,6 @@ try:
                 r2 = z[:16 - len(bin(reg[RDSB])[2:])] + bin(reg[RDSB])[2:]
                 r3 = z[:16 - len(bin(reg[RDSC])[2:])] + bin(reg[RDSC])[2:]
                 r4 = z[:16 - len(bin(reg[RDSD])[2:])] + bin(reg[RDSD])[2:]
-                print r2
-                print r3
-                print r4
             else:
                 print ("  RDS Not Available")
             if reg[STATUSRSSI] & (1<<8):
@@ -389,7 +397,7 @@ try:
                             chars = chr(int(r3[:8],2)) + chr(int(r3[9:],2)) + chr(int(r4[:8],2)) + chr(int(r4[9:],2))
                             index = int(r2[12:],2)
                             if index == 0 and mi != 0:
-                                print "\nRDS MSG = " + msg + "\n"
+                                print("\nRDS MSG = " + msg + "\n")
                                 break
                             if index == mi:
                                 msg += chars
@@ -404,8 +412,9 @@ except KeyboardInterrupt: # trap a CTRL+C keyboard interrupt
     fileLog.close()
     GPIO.output(RST, GPIO.LOW)
 
-except:
-    printMsg("ERROR: an unhandled exception occurred")
+except Exception as ex:
+    printMsg("ERROR: an unhandled exception occurred " + str(ex))
     fileLog.close()
     GPIO.output(RST, GPIO.LOW)
+
 
